@@ -32,6 +32,19 @@ def min_mean_max(y, t, ax, colors):
             bbox=dict(boxstyle="square", alpha=0.7)
     )    
 
+    
+def subset_mean(y, t, ax, pieces=((0, 210), (210, 310), (310, 370), (370, 400), (400, 1787)),
+                colors=('blue', 'dodgerblue', 'deepskyblue', 'steelblue', 'darkblue')):
+    for color, (t0, t1) in zip(colors, pieces):
+        idx, = np.where(np.logical_and(t0 < t, t < t1))
+        t_ = t[idx]
+        y_ = np.mean(y[idx])
+        ax.plot(t_, y_*np.ones_like(t_))
+        ax.text(0.5*(t_[0]+t_[-1]), y_, '{:0.2f}'.format(y_),
+                color=color,
+                ha="right", va="top",
+                bbox=dict(boxstyle="square", alpha=0.7, fc='gold'))
+    
 
 # Image size is
 x0, y0 = 103//2, 110//2
@@ -56,7 +69,7 @@ data = np.loadtxt('./tissue/log.txt')
 
 timet, XCt, YCt, Rt = data.T
 timet *= 0.33 # seconds
-for q in (XC, YC, R):
+for q in (XC, YC, Rt):
     q *= 0.42 # micrometers
 
 AREAt = np.pi*Rt**2
@@ -119,66 +132,85 @@ plt.subplots_adjust(bottom=0.15, wspace=0.25, hspace=0.1)
 
 # Comparison unfiltered filtered
 
-fig, ax = plt.subplots(4, 2, figsize=(16, 10), sharex=True)
+fig, ax = plt.subplots(6, 2, figsize=(16, 10), sharex=True)
 ax = ax.ravel()
 
 # Look at centers
 ax[0].set_title('Raw')
-ax[0].set_ylabel('Xc-X0 [$\mu m$]', color='limegreen')
+ax[0].set_ylabel('Xc-X0 [$\mu m$]', color='limegreen', rotation=80)
 ax[0].plot(time, XCt, color='limegreen')
 ax_ = ax[0].twinx()
-ax_.set_ylabel('Xc-X0 [$\mu m$]', color='tomato')
+ax_.set_ylabel('Xc-X0 [$\mu m$]', color='tomato', rotation=80)
 ax_.plot(time, XC, color='tomato')
 
-ax[2].set_ylabel('Yc-Y0 [$\mu m$]', color='limegreen')
+ax[2].set_ylabel('Yc-Y0 [$\mu m$]', color='limegreen', rotation=80)
 ax[2].plot(time, YCt, color='limegreen')
 ax_ = ax[2].twinx()
-ax_.set_ylabel('Yc-Y0 [$\mu m$]', color='tomato')
+ax_.set_ylabel('Yc-Y0 [$\mu m$]', color='tomato', rotation=80)
 ax_.plot(time, YC, color='tomato')
 
-ax[4].set_ylabel('Radius [$\mu m$]', color='limegreen')
+ax[4].set_ylabel('Radius [$\mu m$]', color='limegreen', rotation=80)
 ax[4].plot(time, Rt, color='limegreen')
+#subset_mean(Rt, time, ax[4])
 ax_ = ax[4].twinx()
-ax_.set_ylabel('Radius [$\mu m$]', color='tomato')
+ax_.set_ylabel('Radius [$\mu m$]', color='tomato', rotation=80)
 ax_.plot(time, R, color='tomato')
+#subset_mean(R, time, ax_)
 
-ax[6].set_ylabel('Area [$\mu m^2$]', color='limegreen')
-ax[6].plot(time, AREAt, color='limegreen')
-ax_ = ax[6].twinx()
+ax[6].set_ylabel('$\Delta$ Radius [$\mu m$]', color='black', rotation=80)
+ax[6].plot(time, Rt-R, color='black')
+subset_mean(Rt-R, time, ax[6])
+
+ax[8].set_ylabel('Area [$\mu m^2$]', color='limegreen', rotation=80)
+ax[8].plot(time, AREAt, color='limegreen')
+#subset_mean(AREAt, time, ax[8])
+ax_ = ax[8].twinx()
 ax_.plot(time, AREA, color='tomato')
-ax_.set_ylabel('Area [$\mu m^2$]', color='tomato')
-ax_.set_xlabel('Time [s]')
+ax_.set_ylabel('Area [$\mu m^2$]', color='tomato', rotation=80)
+#subset_mean(AREA, timet, ax_)
+
+ax[10].set_ylabel('$\Delta$ Area [$\mu m^2$]', color='black', rotation=80)
+ax[10].plot(time, AREAt-AREA, color='black')
+subset_mean(AREAt-AREA, time, ax[10])
+ax[10].set_xlabel('Time [s]')
 
 # -----------
 
 ax[1].set_title('Filtered')
-ax[1].set_ylabel('Xc-X0 [$\mu m$]', color='limegreen')
+ax[1].set_ylabel('Xc-X0 [$\mu m$]', color='limegreen', rotation=80)
 ax[1].plot(time, sfilter(XCt), color='limegreen')
 ax_ = ax[1].twinx()
-ax_.set_ylabel('Xc-X0 [$\mu m$]', color='tomato')
+ax_.set_ylabel('Xc-X0 [$\mu m$]', color='tomato', rotation=80)
 ax_.plot(time, sfilter(XC), color='tomato')
 
-ax[3].set_ylabel('Yc-Y0 [$\mu m$]', color='limegreen')
+ax[3].set_ylabel('Yc-Y0 [$\mu m$]', color='limegreen', rotation=80)
 ax[3].plot(time, sfilter(YCt), color='limegreen')
 ax_ = ax[3].twinx()
-ax_.set_ylabel('Yc-Y0 [$\mu m$]', color='tomato')
+ax_.set_ylabel('Yc-Y0 [$\mu m$]', color='tomato', rotation=80)
 ax_.plot(time, sfilter(YC), color='tomato')
 
-ax[5].set_ylabel('Radius [$\mu m$]', color='limegreen')
+ax[5].set_ylabel('Radius [$\mu m$]', color='limegreen', rotation=80)
 ax[5].plot(time, sfilter(Rt), color='limegreen')
 ax_ = ax[5].twinx()
-ax_.set_ylabel('Radius [$\mu m$]', color='tomato')
+ax_.set_ylabel('Radius [$\mu m$]', color='tomato', rotation=80)
 ax_.plot(time, sfilter(R), color='tomato')
 
-ax[7].set_ylabel('Area [$\mu m^2$]', color='limegreen')
-ax[7].plot(time, sfilter(AREAt), color='limegreen')
-ax_ = ax[7].twinx()
+ax[7].set_ylabel('$\Delta$ Radius [$\mu m$]', color='black', rotation=80)
+ax[7].plot(time, sfilter(Rt)-sfilter(R), color='black')
+subset_mean(sfilter(Rt)-sfilter(R), time, ax[7])
+
+ax[9].set_ylabel('Area [$\mu m^2$]', color='limegreen', rotation=80)
+ax[9].plot(time, sfilter(AREAt), color='limegreen')
+ax_ = ax[9].twinx()
 ax_.plot(time, sfilter(AREA), color='tomato')
-ax_.set_ylabel('Area [$\mu m^2$]', color='tomato')
-ax_.set_xlabel('Time [s]')
+ax_.set_ylabel('Area [$\mu m^2$]', color='tomato', rotation=80)
 
+ax[11].set_ylabel('$\Delta$ Area [$\mu m^2$]', color='black', rotation=80)
+ax[11].plot(time, sfilter(AREAt)-sfilter(AREA), color='black')
+subset_mean(sfilter(AREAt)-sfilter(AREA), time, ax[11])
+ax[11].set_xlabel('Time [s]')
 
-plt.subplots_adjust(bottom=0.15, wspace=0.35, hspace=0.1)
+plt.subplots_adjust(bottom=0.15, wspace=0.35, hspace=0.2)
 
 
 plt.show()

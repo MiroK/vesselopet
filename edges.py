@@ -137,80 +137,55 @@ if __name__ == '__main__':
 
     green_nseq_bk = normalize(green_seq)
 
-    idx = 345
-    img = green_nseq_bk[idx]
-    blue = np.zeros_like(img)
-    max0 = np.max(img)    
-
     m = RadialFinder(f=lambda x: x,
                      reduction=lambda x: np.argmax(x),#reduce_middle(x, 0.6*max0),
                      img=green_nseq_bk[0])
 
-    plt.figure()
-    for values in itertools.islice(m.sample(img), 200, 300):
-        plt.plot(values)
-    plt.show()
+    blue = np.zeros_like(green_nseq_bk[0])
     
-    
-    fig, ax = plt.subplots(1, 3)
+    fig, ax = plt.subplots(1, 2)
     ax = ax.ravel()
+
+    import tqdm
+    import os
+
+    not os.path.isdir('tissue') and os.mkdir('tissue')
+
+    with open('tissue/log.txt', 'w') as out:
+        out.write('# t XC YC R\n')
     
-    ax[0].imshow(np.stack([red_nseq[idx], img, blue], axis=2))
+    for idx in tqdm.tqdm(range(len(green_nseq_bk))):
+        img = green_nseq_bk[idx]
+        max0 = np.max(img)    
 
-    results = np.zeros_like(img)
-    x_, y_ = m.collect(img)
-    ii, = np.where(np.logical_and(np.logical_and(x_ > 10, x_ < 80),
-                                  np.logical_and(y_ > 10, y_ < 80)))
-    x_ = x_[ii]
-    y_ = y_[ii]
-    results[x_, y_] = 1
+        ax[0].imshow(np.stack([red_nseq[idx], img, blue], axis=2))
 
-    ax[1].imshow(results)
+        results = np.zeros_like(img)
+        x_, y_ = m.collect(img)
+        ii, = np.where(np.logical_and(np.logical_and(x_ > 10, x_ < 80),
+                                      np.logical_and(y_ > 10, y_ < 80)))
+        x_ = x_[ii]
+        y_ = y_[ii]
+        results[x_, y_] = 1
 
-    ellipse.estimate(np.c_[x_, y_])
-    circle.estimate(np.c_[x_, y_])
+        ax[1].imshow(results)
 
-    # Plot ellipse
-    theta = np.linspace(0, 2*np.pi, 200)
+        circle.estimate(np.c_[x_, y_])
 
-    xc, yc, a, b, theta0 = ellipse.params
+        theta = np.linspace(0, 2*np.pi, 200)
+        XC, YC, R = circle.params
+        x = XC + R*np.sin(theta)
+        y = YC + R*np.cos(theta)
 
-    x = xc + a*np.sin(theta + theta0)
-    y = yc + b*np.cos(theta + theta0)
+        with open('tissue/log.txt', 'a') as out:
+            out.write('{} {} {} {}\n'.format(idx, XC, YC, R))
 
-    for axi in ax:
-        axi.plot(x, y, color='red')
+        for axi in ax:
+            axi.plot(y, x, color='orange')
 
-    XC, YC, R = circle.params
-    x = XC + R*np.sin(theta + theta0)
-    y = YC + R*np.cos(theta + theta0)
+   
+        fig.savefig('tissue/img_{:04d}.png'.format(idx))
+        for axi in ax:
+            axi.cla()
 
-    for axi in ax:
-        axi.plot(y, x, color='cyan')
-    
-    mask = np.zeros_like(img)
-    mask[x_, y_] = 1
-    
-    from skimage.draw import circle as circle_mask
-    from skimage.draw import ellipse_perimeter as ellipse_mask
-
-    rr, cc = ellipse_mask(int(xc), int(yc), int(a), int(b), theta0)
-    
-    img[rr, cc] = 100
-    ax[2].imshow(img)
-
-    rr, cc = circle_mask(XC, YC, R)
-    
-    mask[rr, cc] += 2
-    mask[mask < 2] = 0
-
-    circle.estimate(np.array(np.where(mask)).T)
-
-    XC, YC, R = circle.params
-    x = XC + R*np.sin(theta + theta0)
-    y = YC + R*np.cos(theta + theta0)
-    
-    for axi in ax:
-        axi.plot(y, x, color='orange')
-    
-        plt.show()
+    plt.show()

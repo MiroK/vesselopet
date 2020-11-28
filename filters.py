@@ -106,6 +106,9 @@ if __name__ == '__main__':
     rpath = '/home/mirok/Downloads/MIRO_TSeries-01302019-0918-028_cycle_001_ch02_short_video-1.tif' 
     red_seq = io.imread(rpath)
 
+    print(red_seq.shape)
+    exit()
+    
     gpath = '/home/mirok/Downloads/MIRO_TSeries-01302019-0918-028_cycle_001_ch01_short_video-1.tif' 
     green_seq = io.imread(gpath)
 
