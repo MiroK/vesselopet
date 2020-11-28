@@ -12,7 +12,8 @@ class RadialEstimator(object):
         # For logging columns
         self.params_names = ('xc', 'yc', 'r')
         if prefix:
-            self.params_names = tuple('_'.join([prefix, p]) for p in prefix)
+            self.params_names = tuple('_'.join([prefix, p])
+                                      for p in self.params_names)
         # Values to be updated at fit
         self.params = ()
     
@@ -50,7 +51,8 @@ class CVXHullEstimator(object):
         # For logging columns
         self.params_names = ('xc', 'yc', 'r')
         if prefix:
-            self.params_names = tuple('_'.join([prefix, p]) for p in prefix)
+            self.params_names = tuple('_'.join([prefix, p])
+                                      for p in self.params_names)
         # Values to be updated at fit
         self.params = ()
     
@@ -119,11 +121,18 @@ if __name__ == '__main__':
 
     red_estimator = CVXHullEstimator(prefix='blood')
     green_estimator = RadialEstimator(img=blue, prefix='tissue')
-    
+
+    log_file = '{}/log_{}_{}.txt'.format(result_dir, comm.rank, comm.size)
+    names = ' '.join(('time', ) + red_estimator.params_names + green_estimator.params_names)
+    with open(log_file, 'w') as log:
+        log.write('# {} \n'.format(names))
+    fmt = '\t'.join(('%g', )*len(names.split(' '))) + '\n'
+
+    results = []
     # I want a plot with auxiliary image for finding blood circle
     #                    auxiliary image for finding tissue circle
     #                    original data with the two circles
-    fig, ax = plt.subplots(1, 3, figsize=(20, 14))        
+    fig, ax = plt.subplots(1, 3, figsize=(20, 14))
     for i in tqdm.tqdm(my_times):
         # Original image
         ax[2].imshow(np.stack([red_nseq_bk[i],
@@ -154,9 +163,12 @@ if __name__ == '__main__':
         fig.savefig('{}/img_{:04d}.png'.format(result_dir, i))
         for axi in ax: axi.cla()
 
-    # results = comm.allgather(results)
-    # results = np.row_stack([np.array(r) for r in results])
+        row = (i, ) + red_estimator.params + green_estimator.params
+        with open(log_file, 'a') as log:
+            log.write(fmt % row)
+        results.append(row)
 
-    # if comm.rank == 0:
-    #     np.savetxt('blood/log.txt', results, header='i xc yc a b theta0 XC YC R')
-    # #plt.show()
+    results = comm.allgather(results)
+    results = np.row_stack([np.array(r) for r in results])
+
+    comm.rank == 0 and np.savetxt('{}/log.txt'.format(result_dir), results, header=names)
