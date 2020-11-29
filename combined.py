@@ -197,8 +197,10 @@ if __name__ == '__main__':
     red_nseq_bk = 1*red_nseq
     
     if smoothed:
-        green_nseq, _ = time_smooth(green_nseq, width=3)
-        red_nseq, _ = time_smooth(red_nseq, width=3)
+        green_nseq, (shift, _) = time_smooth(green_nseq, width=3)
+        red_nseq, (shift, _) = time_smooth(red_nseq, width=3)
+    else:
+        shift = 0
     
     r = red_nseq[0]
     # Remove frame from the blood series
@@ -266,10 +268,10 @@ if __name__ == '__main__':
 
         for axi in ax: axi.axis('off')
         # Next round
-        fig.savefig('{}/img_{:04d}.png'.format(result_dir, i))
+        fig.savefig('{}/img_{:04d}.png'.format(result_dir, i+shift))
         for axi in ax: axi.cla()
 
-        row = (i, ) + red_estimator.params + green_estimator.params
+        row = (i+shift, ) + red_estimator.params + green_estimator.params
         with open(log_file, 'a') as log:
             log.write(fmt % row)
         results.append(row)

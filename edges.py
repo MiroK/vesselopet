@@ -159,24 +159,41 @@ class VesselWidthFinder(SegmentSampler):
         i, j, line_values = super().sample(img)
         c = len(line_values)//2
 
-        plt.figure()
-        plt.plot(np.diff(line_values))
-        plt.plot(line_values)
-        plt.plot(np.cumsum(line_values))
-        plt.show()
+        interlace = lambda x, ys: [(y0, y1) for y0, y1 in zip(ys[:-1], ys[1:])
+                                   if y0 < x < y1]
         
-        size = max(line_values)
         # The idea is to find the most distant "large" peak
         vals = line_values[:c]
         peaks, _ = signal.find_peaks(vals)
+        valleys, _ = signal.find_peaks(-vals)
 
-        i0 = np.argmax(vals[peaks])
+        drop = np.zeros_like(vals)
+        for ii, p in enumerate(peaks):
+            v = interlace(p, valleys)
+            if not v:
+                drop[ii] = -np.inf
+            else:
+                v0, v1 = v[0]
+                drop[ii] = np.abs(vals[p]-vals[v0])
+
+        i0 = np.argmax(drop)
         max_ = peaks[i0]
         first = (i[:c][max_], j[:c][max_], vals[max_])
 
         vals = line_values[c:]
         peaks, _ = signal.find_peaks(vals)
-        i0 = np.argmax(vals[peaks[:-1]]-vals[peaks[1:]])
+        valleys, _ = signal.find_peaks(-vals)
+
+        drop = np.zeros_like(vals)
+        for ii, p in enumerate(peaks):
+            v = interlace(p, valleys)
+            if not v:
+                drop[ii] = -np.inf
+            else:
+                v0, v1 = v[0]
+                drop[ii] = np.abs(vals[p]-vals[v1])
+        
+        i0 = np.argmax(drop)
         max_ = peaks[i0]
         second = (i[c:][max_], j[c:][max_], vals[max_])
 
@@ -256,6 +273,10 @@ if __name__ == '__main__':
     plt.plot(xx)
     print(np.argmin(np.abs(xx-v0)), np.argmin(np.abs(xx-v1)))
     plt.plot(peakind, xx[peakind], marker='x', linestyle='none')
+
+    peakind, _ = signal.find_peaks(-xx)    
+    plt.plot(peakind, xx[peakind], marker='o', linestyle='none')
+    
     plt.plot(np.argmin(np.abs(xx-v0)), v0, marker='o')
     plt.plot(np.argmin(np.abs(xx-v1)), v1, marker='o')        
     
