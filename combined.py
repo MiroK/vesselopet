@@ -2,11 +2,66 @@
 # shape parameters
 from skimage.measure import CircleModel
 from convex_hull import array_convex_hull
-from edges import RadialFinder
+from edges import RadialFinder, VesselWidthFinder, TissueWidthFinder
+from edges import reduce_last
 import numpy as np
 
 
-class RadialEstimator(object):
+class VesselWidth(object):
+    name = 'VesselWidth'
+    def __init__(self, img, src, dst, prefix='', **kwargs):
+        assert False  # FIXME
+        # For logging columns
+        self.params_names = ('xc', 'yc', 'r')
+        if prefix:
+            self.params_names = tuple('_'.join([prefix, p])
+                                      for p in self.params_names)
+        # Values to be updated at fit
+        self.params = ()
+    
+        self.m = VesselWidthFinder(img, src, dst, **kwargs)
+
+    def fit(self, image):
+        (i0, j0, v0), (i1, j1, v1) = self.m.sample(image)
+
+        B = np.zeros_like(image)
+        B[i0, j0] = 1
+        B[i1, j1] = 1
+
+        self.params = (i0+i1)//2, (j0+j1)//2, 0.5*np.sqrt((i0-i1)**2 + (j0-j1)**2)
+
+        return B, np.array([[i0, j0],
+                            [i1, j1]])
+    
+    
+class TissueWidth(object):
+    name = 'TissueWidth'
+    def __init__(self, img, src, dst, prefix='', **kwargs):
+        # For logging columns
+        self.params_names = ('xc', 'yc', 'r')
+        if prefix:
+            self.params_names = tuple('_'.join([prefix, p])
+                                      for p in self.params_names)
+        # Values to be updated at fit
+        self.params = ()
+    
+        self.m = TissueWidthFinder(img, src, dst, **kwargs)
+
+    def fit(self, image):
+        (i0, j0, v0), (i1, j1, v1) = self.m.sample(image)
+
+        B = np.zeros_like(image)
+        B[i0, j0] = 1
+        B[i1, j1] = 1
+
+        self.params = (i0+i1)//2, (j0+j1)//2, 0.5*np.sqrt((i0-i1)**2 + (j0-j1)**2)
+
+        return B, np.array([[i0, j0],
+                            [i1, j1]])
+
+    
+class TissueRadialEstimator(object):
+    name = 'TissueRadialEstimator'
     def __init__(self, img, nthetas=200, prefix=''):
         self.thetas = np.linspace(0, 2*np.pi, nthetas)
         # For logging columns
@@ -44,8 +99,42 @@ class RadialEstimator(object):
         return B, np.c_[x, y]
 
 
+class VesselRadialEstimator(TissueRadialEstimator):
+    name = 'VesselRadialEstimator'
+    def __init__(self, img, nthetas=200, prefix=''):
+        super(VesselRadialEstimator, self).__init__(img, nthetas, prefix)
+    
+        self.m = RadialFinder(f=lambda x: x,
+                              reduction=lambda x: reduce_last(x, 0.5*np.max(x)),
+                              img=img)
+
+    def fit(self, image):
+        B = np.zeros_like(image)
+        # Radial sample for maximum
+        x_, y_ = self.m.collect(image)
+        # We are only after points that are not too far
+        ii, = np.where(np.logical_and(np.logical_and(x_ > 10, x_ < 80),
+                                      np.logical_and(y_ > 10, y_ < 80)))
+        x_ = x_[ii]
+        y_ = y_[ii]
+        B[x_, y_] = 1
+
+        circle = CircleModel()
+        circle.estimate(np.c_[x_, y_])
+
+        XC, YC, R = circle.params
+        x = XC + R*np.sin(self.thetas)
+        y = YC + R*np.cos(self.thetas)
+
+        self.params = (XC, YC, R)
+
+        return B, np.c_[x, y]
+        
+
+
 class CVXHullEstimator(object):
     '''Computes convex hull of mask and fits circle'''
+    name = 'CVXHullEstimator'
     def __init__(self, nthetas=200, prefix=''):
         self.thetas = np.linspace(0, 2*np.pi, nthetas)
         # For logging columns
@@ -60,7 +149,7 @@ class CVXHullEstimator(object):
         B = image > 0.5*np.max(image)#+3*np.std(image)
         
         circle = CircleModel()
-
+        # Need a better model here 
         hull = array_convex_hull(B)    
         x_, y_ = hull.T
         x_ = np.r_[x_, x_[0]]
@@ -80,16 +169,18 @@ class CVXHullEstimator(object):
 
 if __name__ == '__main__':
     from filters import left_edge, right_edge, top_edge, bottom_edge
-    from filters import normalize, split_jobs
+    from filters import normalize, split_jobs, time_smooth
     from mpi4py import MPI
-    import tqdm
-    import os
-    
+    import tqdm, os, argparse
     import matplotlib
-    matplotlib.use('AGG') 
     import matplotlib.pyplot as plt
-
     import skimage.io as io
+    
+    matplotlib.use('AGG') 
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-smoothed', type=int, default=0, help='Time smoothing')
+    args = parser.parse_args()
 
     rpath = '/home/mirok/Downloads/MIRO_TSeries-01302019-0918-028_cycle_001_ch02_short_video-1.tif' 
     red_seq = io.imread(rpath)
@@ -97,11 +188,18 @@ if __name__ == '__main__':
     gpath = '/home/mirok/Downloads/MIRO_TSeries-01302019-0918-028_cycle_001_ch01_short_video-1.tif' 
     green_seq = io.imread(gpath)
 
-    green_nseq = normalize(green_seq)
-    
-    red_nseq_bk = normalize(red_seq)
-    red_nseq = 1*red_nseq_bk
+    smoothed = bool(args.smoothed)
 
+    green_nseq = normalize(green_seq)
+    green_nseq_bk = 1*green_nseq
+
+    red_nseq = normalize(red_seq)
+    red_nseq_bk = 1*red_nseq
+    
+    if smoothed:
+        green_nseq, _ = time_smooth(green_nseq, width=3)
+        red_nseq, _ = time_smooth(red_nseq, width=3)
+    
     r = red_nseq[0]
     # Remove frame from the blood series
     lft, rght, tp, btm = [f(r, 25) for f in (left_edge, right_edge, top_edge, bottom_edge)]
@@ -111,16 +209,23 @@ if __name__ == '__main__':
 
     comm = MPI.COMM_WORLD
 
-    result_dir = 'combined'
+    blue = np.zeros_like(r)        
+
+    # red_estimator = CVXHullEstimator(prefix='blood')
+    # green_estimator = TissueRadialEstimator(img=blue, prefix='tissue')
+
+    nrows, ncols = blue.shape
+    # Green sample similar to laura
+    src, dst = (0+5, 0), (nrows-1, ncols-1+5)
+    green_estimator = TissueWidth(blue, src, dst, prefix='tissue')    
+    red_estimator = VesselRadialEstimator(img=blue, prefix='blood')
+
+
+    result_dir = '{}_{}_smooth{}'.format(green_estimator.name, red_estimator.name, smoothed)
     comm.rank == 0 and not os.path.isdir(result_dir) and os.mkdir(result_dir)
 
     time_idx = np.arange(len(time))
     my_times = split_jobs(comm, time_idx)
-
-    blue = np.zeros_like(r)        
-
-    red_estimator = CVXHullEstimator(prefix='blood')
-    green_estimator = RadialEstimator(img=blue, prefix='tissue')
 
     log_file = '{}/log_{}_{}.txt'.format(result_dir, comm.rank, comm.size)
     names = ' '.join(('time', ) + red_estimator.params_names + green_estimator.params_names)
@@ -136,19 +241,10 @@ if __name__ == '__main__':
     for i in tqdm.tqdm(my_times):
         # Original image
         ax[2].imshow(np.stack([red_nseq_bk[i],
-                               green_nseq[i],
+                               green_nseq_bk[i],
                                blue], axis=2))
         # Center title
         ax[1].set_title('Time {:0.2f} s'.format(i*0.33))
-
-        # Blood fit
-        rimage = red_nseq[i]
-
-        aux_red, red_mask = red_estimator.fit(rimage)
-        ax[0].imshow(aux_red)
-        # Add it's data
-        ax[0].plot(red_mask[:, 1], red_mask[:, 0], color='blue')
-        ax[2].plot(red_mask[:, 1], red_mask[:, 0], color='blue')
 
         # Tissue fit
         gimage = green_nseq[i]
@@ -157,6 +253,16 @@ if __name__ == '__main__':
         # Add it's data
         ax[1].plot(green_mask[:, 1], green_mask[:, 0], color='gold')
         ax[2].plot(green_mask[:, 1], green_mask[:, 0], color='gold')
+        
+        # Blood fit
+        rimage = red_nseq[i]
+
+        aux_red, red_mask = red_estimator.fit(rimage)
+        ax[0].imshow(aux_red)
+        # Add it's data
+        ax[0].plot(red_mask[:, 1], red_mask[:, 0], color='blue', linewidth=8)
+        ax[2].plot(red_mask[:, 1], red_mask[:, 0], color='blue', linewidth=8)
+
 
         for axi in ax: axi.axis('off')
         # Next round
@@ -172,3 +278,6 @@ if __name__ == '__main__':
     results = np.row_stack([np.array(r) for r in results])
 
     comm.rank == 0 and np.savetxt('{}/log.txt'.format(result_dir), results, header=names)
+
+    # FIXME: green /
+    #        blood ala Laura estimator X

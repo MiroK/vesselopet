@@ -1,6 +1,9 @@
 from skimage.measure import profile_line
+from scipy import signal
 import numpy as np
 import itertools 
+
+import matplotlib.pyplot as plt
 
 
 class RadialSampler(object):
@@ -112,7 +115,100 @@ def reduce_wmean(x, value):
 class MaxFinder(RadialFinder):
     def __init__(self, img, x0=None, y0=None):
         super(MaxFinder, self).__init__(lambda x: x, np.argmax, img, x0, y0)
+
+
+class SegmentSampler(object):
+    '''Sample image on lines going from (x0, y0) to boundaries'''
+    def __init__(self, img, src, dst):
+        nrows, ncols = img.shape
+
+        cols = np.tile(np.arange(ncols), (nrows, 1))
+        rows = np.tile(np.arange(nrows), (ncols, 1)).T
+
+        i_values = np.array(profile_line(rows, src, dst, mode='constant'), dtype=int)
+        j_values = np.array(profile_line(cols, src, dst, mode='constant'), dtype=int)
+
+        self.i_values, self.j_values = i_values, j_values
+
+        self.src = src
+        self.dst = dst
+
+    def sample(self, img):
+        '''Image values on rays'''
+        line_values = profile_line(img, self.src, self.dst, mode='constant')
+        return (self.i_values, self.j_values, line_values)
+
+
+class VesselWidthFinder(SegmentSampler):
+    '''
+    Estimate __|---|__ region (blood)
+
+    The idea here is to sample on line and then consider separately halfs 
+    as determined by line parametrization ( t \in(0, 1) ). On the t > 0.5 
+    we want the most distant "peak". For t < 0.5 it is the closest one.
+    '''
+    def __init__(self, img, src, dst, nlpeaks=6, ltol=0.6, nrpeaks=6, rtol=0.6):
+        self.nlpeaks = nlpeaks
+        self.ltol = ltol
+        self.nrpeaks = nrpeaks
+        self.rtol = rtol
+
+        super(VesselWidthFinder, self).__init__(img, src, dst)
         
+    def sample(self, img):
+        i, j, line_values = super().sample(img)
+        c = len(line_values)//2
+
+        plt.figure()
+        plt.plot(np.diff(line_values))
+        plt.plot(line_values)
+        plt.plot(np.cumsum(line_values))
+        plt.show()
+        
+        size = max(line_values)
+        # The idea is to find the most distant "large" peak
+        vals = line_values[:c]
+        peaks, _ = signal.find_peaks(vals)
+
+        i0 = np.argmax(vals[peaks])
+        max_ = peaks[i0]
+        first = (i[:c][max_], j[:c][max_], vals[max_])
+
+        vals = line_values[c:]
+        peaks, _ = signal.find_peaks(vals)
+        i0 = np.argmax(vals[peaks[:-1]]-vals[peaks[1:]])
+        max_ = peaks[i0]
+        second = (i[c:][max_], j[c:][max_], vals[max_])
+
+        return first, second
+
+
+class TissueWidthFinder(SegmentSampler):
+    '''
+    Estimate _/\--/\-- region (tissue)
+
+    The idea here is to sample on line and then consider separately halfs 
+    as determined by line parametrization ( t \in(0, 1) ). 
+    we want the most distant "peak". For t < 0.5 it is the closest one.
+    '''
+    def __init__(self, img, src, dst):
+        super(TissueWidthFinder, self).__init__(img, src, dst)
+        
+    def sample(self, img):
+        i, j, line_values = super().sample(img)
+        c = len(line_values)//2
+
+        # The idea is to find the most distant "large" peak
+        vals = line_values[:c]
+        max_ = np.argmax(vals)
+        first = (i[:c][max_], j[:c][max_], vals[max_])
+
+        vals = line_values[c:]
+        max_ = np.argmax(vals)
+        second = (i[c:][max_], j[c:][max_], vals[max_])
+        
+        return first, second
+
 # --------------------------------------------------------------------
 
 if __name__ == '__main__':
@@ -137,8 +233,48 @@ if __name__ == '__main__':
 
     green_nseq_bk = normalize(green_seq)
 
+    from filters import time_smooth
+    
+    bar, _ = time_smooth(green_nseq_bk, width=3)
+    foo, _ = time_smooth(red_nseq, width=3)    
+    # bar, xx = time_smooth(green_nseq, width=5, arrow=np.max)
+
+    idx = 1
+    nrows, ncols =  foo[0].shape
+    ss = SegmentSampler(foo[idx], (nrows-1, 0), (0, ncols-1))
+    s = VesselWidthFinder(foo[idx], (nrows-1, 0), (0, ncols-1)) 
+    # s = TissueWidthFinder(foo[idx], (0+5, 0), (nrows-1, ncols-1+5))
+    (i0, j0, v0), (i1, j1, v1) = s.sample(foo[idx])
+
+    from scipy import signal
+    
+    plt.figure()
+    xx = ss.sample(foo[idx])[2]
+
+    peakind, _ = signal.find_peaks(xx)
+    
+    plt.plot(xx)
+    print(np.argmin(np.abs(xx-v0)), np.argmin(np.abs(xx-v1)))
+    plt.plot(peakind, xx[peakind], marker='x', linestyle='none')
+    plt.plot(np.argmin(np.abs(xx-v0)), v0, marker='o')
+    plt.plot(np.argmin(np.abs(xx-v1)), v1, marker='o')        
+    
+    #img[int(i0), int(j0)] = 1.
+    #img[int(i1), int(j1)] = 1.
+    
+    fig, ax = plt.subplots(1, 2)
+    ax[0].imshow(foo[idx])
+    ax[0].plot([j0, j1], [i0, i1], color='magenta')
+
+    ax[1].imshow(green_nseq_bk[idx])
+    ax[1].plot([j0, j1], [i0, i1], color='magenta')
+    
+    # plt.show()
+    
+    #exit()
+    
     m = RadialFinder(f=lambda x: x,
-                     reduction=lambda x: np.argmax(x),#reduce_middle(x, 0.6*max0),
+                     reduction=lambda x: reduce_last(x, 0.5*np.max(x)),# : np.argmax(x),#reduce_middle(x, 0.6*max0),
                      img=green_nseq_bk[0])
 
     blue = np.zeros_like(green_nseq_bk[0])
@@ -146,6 +282,31 @@ if __name__ == '__main__':
     fig, ax = plt.subplots(1, 2)
     ax = ax.ravel()
 
+    red_ = foo[idx]
+    results = np.zeros_like(red_)
+    x_, y_ = m.collect(red_)
+    ii, = np.where(np.logical_and(np.logical_and(x_ > 10, x_ < 80),
+                                  np.logical_and(y_ > 10, y_ < 80)))
+    x_ = x_[ii]
+    y_ = y_[ii]
+    results[x_, y_] = 1
+
+    circle = CircleModel()
+    circle.estimate(np.c_[x_, y_])
+
+    thetas = np.linspace(0, 2*np.pi, 200)
+    XC, YC, R = circle.params
+    x = XC + R*np.sin(thetas)
+    y = YC + R*np.cos(thetas)
+
+    ax[0].imshow(red_)
+    ax[1].imshow(results)
+
+    ax[0].plot(y, x, color='magenta')
+    ax[1].plot(y, x, color='magenta')
+
+    plt.show()
+    exit()
     import tqdm
     import os
 
@@ -189,3 +350,10 @@ if __name__ == '__main__':
             axi.cla()
 
     plt.show()
+
+# Consider running analysis on img integrated(mean, max) in time
+
+# Radial sampling for red - after -1, most distant min?
+
+# Red filter ala Laura            []
+# Green filter ala Laura

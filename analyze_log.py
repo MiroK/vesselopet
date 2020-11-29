@@ -50,14 +50,16 @@ def subset_mean(y, t, ax, pieces=((0, 210), (210, 310), (310, 370), (370, 400), 
 x0, y0 = 103//2, 110//2
 
 # Blood
-data = np.loadtxt('./blood/log.txt')
-
-time, xc, yc, a, b, theta0, XC, YC, R = data.T
+data0 = np.loadtxt('./combined/log.txt')
+with open('./combined/log.txt') as log:
+    keys = log.readline()[1:].strip().split(' ')
+    data0 = {key: data0[:, i] for i, key in enumerate(keys)}
+    
+time, XC, YC, R = data0['time'], data0['blood_xc'], data0['blood_yc'], data0['blood_r']
 time *= 0.33 # seconds
-for q in (xc, yc, a, b, XC, YC, R):
+for q in (XC, YC, R):
     q *= 0.42 # micrometers
 
-area = np.pi*a*b
 AREA = np.pi*R**2
 # With respect to image center
 XC -= x0
@@ -65,11 +67,14 @@ YC -= y0
 
 # ----------------------
 
-data = np.loadtxt('./tissue/log.txt')
-
-timet, XCt, YCt, Rt = data.T
+data1 = np.loadtxt('./combined/log.txt')  # This could be potentially different
+with open('./combined/log.txt') as log:
+    keys = log.readline()[1:].strip().split(' ')
+    data1 = {key: data1[:, i] for i, key in enumerate(keys)}
+    
+timet, XCt, YCt, Rt = data1['time'], data1['tissue_xc'], data1['tissue_yc'], data1['tissue_r']
 timet *= 0.33 # seconds
-for q in (XC, YC, Rt):
+for q in (XCt, YCt, Rt):
     q *= 0.42 # micrometers
 
 AREAt = np.pi*Rt**2
@@ -129,6 +134,7 @@ ax[7].plot(timet, sfilter(AREA), color='black')
 ax[7].set_xlabel('Time [s]')
 
 plt.subplots_adjust(bottom=0.15, wspace=0.25, hspace=0.1)
+fig.savefig('tissue_vessel_raw.pdf')
 
 # Comparison unfiltered filtered
 
@@ -211,7 +217,7 @@ subset_mean(sfilter(AREAt)-sfilter(AREA), time, ax[11])
 ax[11].set_xlabel('Time [s]')
 
 plt.subplots_adjust(bottom=0.15, wspace=0.35, hspace=0.2)
-
+fig.savefig('comparison_raw.pdf')
 
 plt.show()
 

@@ -72,6 +72,20 @@ def tmean_threshold(seq, threshold, reduce=np.max):
 def normalize(seq, reduce=np.max):
     '''Normalize such that reduce(space_t) is 1'''
     return seq/reduce(seq, axis=(1, 2))[:, np.newaxis, np.newaxis]
+
+
+def time_smooth(seq, width, arrow=np.mean):
+    '''seq[i-width//2:i+width/2+1] -> seq[i], -> somehow'''
+    # Simpler for odd
+    assert width//2
+    l = len(seq)    
+    print(tuple((i, l-j) for i, j in zip(range(width), range(width, -1, -1))))
+
+    cmb = np.array([seq[i:l-j] for i, j in zip(range(width), range(width, -1, -1))])
+    # Return also indices for allignment
+    return np.mean(cmb, axis=0), (width//2, l-1-width//2)
+
+
 # Isolated pixels in space (by convolution? skimage.threshold.)
 # Normalize seqeunce
 #
@@ -98,7 +112,7 @@ def split_jobs(comm, jobs):
 
 if __name__ == '__main__':
     import matplotlib
-    matplotlib.use('AGG') 
+    # matplotlib.use('AGG') 
     import matplotlib.pyplot as plt
 
     import skimage.io as io
@@ -106,8 +120,6 @@ if __name__ == '__main__':
     rpath = '/home/mirok/Downloads/MIRO_TSeries-01302019-0918-028_cycle_001_ch02_short_video-1.tif' 
     red_seq = io.imread(rpath)
 
-    print(red_seq.shape)
-    exit()
     
     gpath = '/home/mirok/Downloads/MIRO_TSeries-01302019-0918-028_cycle_001_ch01_short_video-1.tif' 
     green_seq = io.imread(gpath)
@@ -117,7 +129,22 @@ if __name__ == '__main__':
     red_nseq_bk = normalize(red_seq)
     red_nseq = 1*red_nseq_bk
 
-    r = red_nseq[0]
+    foo, _ = time_smooth(red_nseq, width=5)
+    bar, xx = time_smooth(red_nseq, width=5, arrow=np.max)
+    print(xx)
+    r = red_nseq[xx[0]]
+
+    fig, ax = plt.subplots(1, 3)
+    ax[0].imshow(r)
+    ax[1].imshow(foo[0])
+    ax[2].imshow(bar[0])    
+    plt.show()
+
+
+    print(red_seq.shape)
+    exit()
+
+    
     # Too wide?
     lft, rght, tp, btm = [f(r, 25) for f in (left_edge, right_edge, top_edge, bottom_edge)]
     time = np.arange(len(red_nseq))
